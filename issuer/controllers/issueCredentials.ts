@@ -38,4 +38,16 @@ const send = async (req: express.Request, res: express.Response) => {
   }
 };
 
-export { send };
+const allCredentialExchangeRecords = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const credentialExchangeRecords = await agent.credentials.getAll();
+    res.status(200).json({ credentialExchangeRecords });
+  } catch (error) {
+    throw new Aries(error);
+  }
+};
+
+export { send, allCredentialExchangeRecords };
