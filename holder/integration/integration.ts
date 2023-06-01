@@ -102,16 +102,10 @@ async function initializeAgent(agentConfig: InitConfig) {
           mediatorInvitationUrl,
         }),
         credentials: new CredentialsModule({
-          autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
+          autoAcceptCredentials: AutoAcceptCredential.Always,
           credentialProtocols: [
-            new V1CredentialProtocol({
-              indyCredentialFormat: legacyIndyCredentialFormatService,
-            }),
             new V2CredentialProtocol({
-              credentialFormats: [
-                legacyIndyCredentialFormatService,
-                new AnonCredsCredentialFormatService(),
-              ],
+              credentialFormats: [new AnonCredsCredentialFormatService()],
             }),
           ],
         }),
@@ -153,8 +147,8 @@ async function initializeAgent(agentConfig: InitConfig) {
     //   agent.registerInboundTransport(new HttpInboundTransport({ port: agentPort }));
     agent.registerOutboundTransport(new WsOutboundTransport());
     console.log('Initializing agent...');
-    await agent.wallet.createAndOpen;
     await agent.initialize();
+    await agent.modules.anoncreds.getLinkSecretIds();
     console.log('Initializing agent... Success');
     // To clear all the old records in the wallet
     return agent;
@@ -218,6 +212,18 @@ const credentialOfferListener = () => {
       if (payload.credentialRecord.state === CredentialState.OfferReceived) {
         console.log('received credential');
         console.log(payload.credentialRecord);
+        // const linkSecretIds = await agent.modules.anoncreds.getLinkSecretIds();
+        // if (linkSecretIds.length === 0) {
+        //   await agent.modules.anoncreds.createLinkSecret();
+        // }
+
+        // agent.credentials.acceptOffer({
+        //   credentialRecordId: payload.credentialRecord.id,
+        // });
+      }
+      if (payload.credentialRecord.state === CredentialState.CredentialIssued) {
+        console.log('credential successfully recieved');
+        console.log(payload);
       }
     }
   );
