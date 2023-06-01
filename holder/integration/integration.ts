@@ -110,7 +110,7 @@ async function initializeAgent(agentConfig: InitConfig) {
           ],
         }),
         proofs: new ProofsModule({
-          autoAcceptProofs: AutoAcceptProof.ContentApproved,
+          autoAcceptProofs: AutoAcceptProof.Always,
           proofProtocols: [
             new V1ProofProtocol({
               indyProofFormat: legacyIndyProofFormatService,
@@ -148,7 +148,7 @@ async function initializeAgent(agentConfig: InitConfig) {
     agent.registerOutboundTransport(new WsOutboundTransport());
     console.log('Initializing agent...');
     await agent.initialize();
-    await agent.modules.anoncreds.getLinkSecretIds();
+    await agent.modules.anoncreds.createLinkSecret();
     console.log('Initializing agent... Success');
     // To clear all the old records in the wallet
     return agent;
