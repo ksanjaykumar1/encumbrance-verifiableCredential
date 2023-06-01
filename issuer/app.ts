@@ -13,6 +13,7 @@ import debug from 'debug';
 import {
   agent,
   connectionListner,
+  importDID,
   initialOutOfBandRecord,
   registerInitialScehmaAndCredDef,
   run,
@@ -20,8 +21,9 @@ import {
 import connections from './routes/connections';
 import schema from './routes/schema';
 import credDef from './routes/credDef';
-import issueCredentialV1 from './routes/issueCredentials-v1';
+import issueCredentialV2 from './routes/issueCredentials-v2';
 import outOfBand from './routes/outOfBand';
+import credential from './routes/credential';
 
 import notFound from './middleware/not-found';
 import { removeData } from './utils/file';
@@ -58,8 +60,9 @@ app.use(expressWinston.logger(loggerOptions));
 app.use('/api/v1/connections', connections);
 app.use('/api/v1/schemas', schema);
 app.use('/api/v1/credential-definitions', credDef);
-app.use('/api/v1/issue-credential', issueCredentialV1);
+app.use('/api/v1/issue-credential', issueCredentialV2);
 app.use('/api/v1/out-of-band', outOfBand);
+app.use('/api/v1/credential', credential);
 
 // this is a simple route to make sure everything is working properly
 const runningMessage = `Server running at http://localhost:${port}`;
@@ -78,7 +81,8 @@ const start = async () => {
     // to clean local storage
     removeData();
     await run();
-    await connectionListner(initialOutOfBandRecord);
+    await importDID();
+    connectionListner(initialOutOfBandRecord);
     console.log('before registering schema and cred def');
     await registerInitialScehmaAndCredDef();
     // }
