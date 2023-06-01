@@ -1,36 +1,65 @@
 import { config } from 'dotenv';
 config();
 import * as fs from 'fs';
+import qrcode from 'qrcode-terminal';
 
 import {
-  Agent,
-  AttributeFilter,
+  CredentialsModule,
+  DidsModule,
+  InitConfig,
+  V2CredentialProtocol,
+  MediationRecipientModule,
+  ConnectionsModule,
+  KeyDidResolver,
   AutoAcceptCredential,
+  ProofsModule,
   AutoAcceptProof,
-  ConnectionEventTypes,
-  ConnectionRecord,
-  ConnectionStateChangedEvent,
+  V2ProofProtocol,
+  Agent,
+  OutOfBandRecord,
+  LogLevel,
+  utils,
   ConsoleLogger,
+  HttpOutboundTransport,
+  WsOutboundTransport,
+  ConnectionStateChangedEvent,
+  ConnectionEventTypes,
+  DidExchangeState,
+  KeyType,
+  TypedArrayEncoder,
+  ConnectionRecord,
   CredentialEventTypes,
   CredentialState,
   CredentialStateChangedEvent,
-  DidExchangeState,
-  HttpOutboundTransport,
-  InitConfig,
-  LogLevel,
-  OutOfBandRecord,
-  ProofAttributeInfo,
+  ProofStateChangedEvent,
   ProofEventTypes,
   ProofState,
-  ProofStateChangedEvent,
-  V1CredentialPreview,
-  WsOutboundTransport,
-  utils,
+  V2CredentialPreview,
 } from '@aries-framework/core';
 
 import { HttpInboundTransport, agentDependencies } from '@aries-framework/node';
 
-import qrcode from 'qrcode-terminal';
+import {
+  AnonCredsCredentialFormatService,
+  AnonCredsModule,
+  AnonCredsProofFormatService,
+  LegacyIndyCredentialFormatService,
+  LegacyIndyProofFormatService,
+  V1CredentialPreview,
+  V1CredentialProtocol,
+  V1ProofProtocol,
+} from '@aries-framework/anoncreds';
+import { AskarModule } from '@aries-framework/askar';
+import {
+  IndyVdrAnonCredsRegistry,
+  IndyVdrIndyDidResolver,
+  IndyVdrModule,
+} from '@aries-framework/indy-vdr';
+import { AnonCredsRsModule } from '@aries-framework/anoncreds-rs';
+
+import { ariesAskar } from '@hyperledger/aries-askar-nodejs';
+import { anoncreds } from '@hyperledger/anoncreds-nodejs';
+import { indyVdr } from '@hyperledger/indy-vdr-nodejs';
 
 import { ledgers } from '../utils/ledgers';
 import { Aries } from '../errors';
@@ -49,18 +78,11 @@ let connectedConnectionRecord: ConnectionRecord;
 
 const agentConfig: InitConfig = {
   logger: new ConsoleLogger(env === 'dev' ? LogLevel.trace : LogLevel.info),
+  // logger: new ConsoleLogger(LogLevel.info),
   label: label + utils.uuid(),
-  autoAcceptConnections: true,
-  autoAcceptProofs: AutoAcceptProof.Always,
-  autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
-  mediatorConnectionsInvite: mediatorInvitationUrl,
-  indyLedgers: ledgers,
-  publicDidSeed,
-  autoUpdateStorageOnStartup: true,
   walletConfig: {
     id: label,
     key: 'demoagentissuer00000000000000000',
-    // storage: { type: 'sqlite' },
   },
 };
 
@@ -69,6 +91,47 @@ async function initializeAgent(agentConfig: InitConfig) {
     const agent = new Agent({
       config: agentConfig,
       dependencies: agentDependencies,
+      modules: {
+        connections: new ConnectionsModule({
+          autoAcceptConnections: true,
+        }),
+        mediationRecipient: new MediationRecipientModule({
+          mediatorInvitationUrl,
+        }),
+        credentials: new CredentialsModule({
+          autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
+          credentialProtocols: [
+            new V2CredentialProtocol({
+              credentialFormats: [new AnonCredsCredentialFormatService()],
+            }),
+          ],
+        }),
+        proofs: new ProofsModule({
+          autoAcceptProofs: AutoAcceptProof.ContentApproved,
+          proofProtocols: [
+            new V2ProofProtocol({
+              proofFormats: [new AnonCredsProofFormatService()],
+            }),
+          ],
+        }),
+        anoncreds: new AnonCredsModule({
+          registries: [new IndyVdrAnonCredsRegistry()],
+        }),
+        anoncredsRs: new AnonCredsRsModule({
+          anoncreds,
+        }),
+        indyVdr: new IndyVdrModule({
+          indyVdr,
+          networks: [ledgers],
+        }),
+        dids: new DidsModule({
+          resolvers: [new IndyVdrIndyDidResolver(), new KeyDidResolver()],
+          registrars: [],
+        }),
+        askar: new AskarModule({
+          ariesAskar,
+        }),
+      },
     });
     // Registering the required in- and outbound transports
     agent.registerOutboundTransport(new HttpOutboundTransport());
@@ -107,104 +170,10 @@ const createOutOfBandRecord = async () => {
   return invitationUrl;
 };
 
-const registerSchema = async (
-  attributes: string[],
-  name: string,
-  version: string
-) => {
-  console.log('registerSchema');
-  try {
-    const schema = await agent.ledger.registerSchema({
-      attributes,
-      name,
-      version,
-    });
-    console.log('schema');
-    console.log(schema);
-
-    // create a folder if doesn't exits to store data
-    const dir = './data';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-    }
-    fs.writeFileSync('./data/schema.json', JSON.stringify(schema));
-    return schema;
-  } catch (error) {
-    console.log(error);
-  }
-};
-
-const registerCredentialDefinition = async (schema: any) => {
-  try {
-    const credentialDefinition =
-      await agent.ledger.registerCredentialDefinition({
-        schema,
-        supportRevocation: false,
-        tag: 'latest',
-      });
-    fs.writeFileSync(
-      './data/credentialDefinition.json',
-      JSON.stringify(credentialDefinition)
-    );
-
-    return credentialDefinition;
-  } catch (error) {}
-};
-
-const getDefaultCredDefId = () => {
-  const initialCredDefBuffer = fs.readFileSync(
-    `./data/credentialDefinition.json`,
-    'utf8'
-  );
-  const initialCredDef = JSON.parse(initialCredDefBuffer);
-  return initialCredDef.id;
-};
-
-const registerInitialScehmaAndCredDef = async () => {
-  console.log('called registerInitialScehmaAndCredDef');
-
-  const schema = await registerSchema(
-    [],
-    schemaName + utils.uuid(),
-    '1.0'
-  );
-  console.log(schema);
-  const credentialDefinition = await registerCredentialDefinition(schema);
-};
-
 // send basic message
 
 const sendMessage = async (connectionRecordId: string, message: string) => {
   await agent.basicMessages.sendMessage(connectionRecordId, message);
-};
-
-const issueCredentialV1 = async (
-  credentialDefinitionId: string,
-  connectionId: string,
-  attributes: any
-) => {
-  let credentialPreview;
-  try {
-    credentialPreview = await V1CredentialPreview.fromRecord(attributes);
-    console.log(credentialPreview);
-  } catch (error) {
-    throw new Aries(`credentialPreview : ${error}`);
-  }
-  try {
-    const offerCredential = await agent.credentials.offerCredential({
-      protocolVersion: 'v1',
-      connectionId,
-      credentialFormats: {
-        indy: {
-          credentialDefinitionId,
-          attributes: credentialPreview.attributes,
-        },
-      },
-    });
-    return offerCredential;
-  } catch (error) {
-    throw new Aries(`issuance : ${error}`);
-  }
 };
 
 const sendProofRequest = async (
@@ -212,24 +181,24 @@ const sendProofRequest = async (
   connectionId: string
 ) => {
   const proofAttribute = {
-    name: new ProofAttributeInfo({
+    name: {
       names: ['LandID', 'OwnerAadhar'],
       restrictions: [
-        new AttributeFilter({
-          credentialDefinitionId: credentialDefinitionId,
-        }),
+        {
+          cred_def_id: credentialDefinitionId,
+        },
       ],
-    }),
+    },
   };
   const proofRequest = await agent.proofs.requestProof({
-    protocolVersion: 'v1',
+    protocolVersion: 'v2',
     connectionId,
     proofFormats: {
-      indy: {
+      anoncreds: {
         name: 'proof-request',
         version: '1.0',
         nonce: '1298236324864',
-        requestedAttributes: proofAttribute,
+        requested_attributes: proofAttribute,
       },
     },
   });
@@ -267,6 +236,7 @@ const proofAcceptedListener = () => {
     async ({ payload }: ProofStateChangedEvent) => {
       if (payload.proofRecord.state === ProofState.Done) {
         console.log(payload.proofRecord);
+        console.log(payload);
         if (payload.proofRecord.isVerified) {
           console.log('succesfully veriferd......');
           await sendMessage(
@@ -287,15 +257,11 @@ const proofAcceptedListener = () => {
 export {
   agent,
   invitationUrl,
-  registerInitialScehmaAndCredDef,
-  registerSchema,
-  registerCredentialDefinition,
   initialOutOfBandRecord,
   createOutOfBandRecord,
   connectionListner,
   sendMessage,
   connectedConnectionRecord,
-  issueCredentialV1,
   sendProofRequest,
   proofAcceptedListener,
 };

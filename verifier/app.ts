@@ -15,13 +15,9 @@ import {
   connectionListner,
   initialOutOfBandRecord,
   proofAcceptedListener,
-  registerInitialScehmaAndCredDef,
   run,
 } from './integration/integration';
 import connections from './routes/connections';
-import schema from './routes/schema';
-import credDef from './routes/credDef';
-import issueCredentialV1 from './routes/issueCredentials-v1';
 import outOfBand from './routes/outOfBand';
 import presentProofV1 from './routes/presentProof-v1';
 
@@ -59,9 +55,6 @@ if (!process.env.DEBUG) {
 // initialize the logger with the above configuration
 app.use(expressWinston.logger(loggerOptions));
 app.use('/api/v1/connections', connections);
-app.use('/api/v1/schemas', schema);
-app.use('/api/v1/credential-definitions', credDef);
-app.use('/api/v1/issue-credential', issueCredentialV1);
 app.use('/api/v1/out-of-band', outOfBand);
 app.use('/api/v1/present-proof', presentProofV1);
 
