@@ -12,7 +12,7 @@ const getCredDefById = async (req: express.Request, res: express.Response) => {
 
   const credDefId = credDef_id || initialCredDef.id;
   try {
-    const credDef = await agent.ledger.getCredentialDefinition(credDefId);
+    const credDef = await agent.modules.anoncreds.getCredentialDefinition(credDefId);
     res.status(200).json({ credDef });
   } catch (error) {
     throw new Aries(error);
@@ -28,9 +28,9 @@ const registerCredDef = async (req: express.Request, res: express.Response) => {
       );
     }
     const schemaFile = JSON.parse(schemaBuffer);
-    const schema = await agent.ledger.getSchema(JSON.parse(schemaFile.id));
+    const schema = await agent.modules.anoncreds.getSchema(JSON.parse(schemaFile.id));
 
-    const credDef = await agent.ledger.registerCredentialDefinition({
+    const credDef = await agent.modules.anoncreds.registerCredentialDefinition({
       schema,
       supportRevocation: false,
       tag: 'latest',

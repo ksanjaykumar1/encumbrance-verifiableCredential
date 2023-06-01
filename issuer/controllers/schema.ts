@@ -12,7 +12,8 @@ const getSchemaById = async (req: express.Request, res: express.Response) => {
 
   const schemaId = schema_id || initialSchema.id;
   try {
-    const schema = await agent.ledger.getSchema(schemaId);
+    const schema = await agent.modules.anoncreds.getSchema(schemaId);
+
     res.status(200).json({ schema });
   } catch (error) {
     throw new Aries(error);
@@ -20,7 +21,7 @@ const getSchemaById = async (req: express.Request, res: express.Response) => {
 };
 const registerSchema = async (req: express.Request, res: express.Response) => {
   const { attributes, name, version } = req.body;
-  const schema = await agent.ledger.registerSchema({
+  const schema = await agent.modules.anoncreds.registerSchema({
     attributes,
     name: `${name}-${utils.uuid()}`,
     version,

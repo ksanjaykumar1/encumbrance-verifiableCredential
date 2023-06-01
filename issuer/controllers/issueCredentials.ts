@@ -21,7 +21,9 @@ const send = async (req: express.Request, res: express.Response) => {
       'utf8'
     );
     const initialCredDef = JSON.parse(initialCredDefBuffer);
-    credentialDefinitionId = initialCredDef.id;
+    console.log(initialCredDef.credentialDefinitionId);
+    console.log(initialCredDef.credentialDefinition.credentialDefinitionId);
+    credentialDefinitionId = initialCredDef.credentialDefinitionId;
   }
   console.log(
     `sending credential offer for connection id ${connectionId} using cred def ${credentialDefinitionId}`

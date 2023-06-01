@@ -1,39 +1,71 @@
 import { config } from 'dotenv';
 config();
 import * as fs from 'fs';
+import qrcode from 'qrcode-terminal';
 
 import {
-  Agent,
+  CredentialsModule,
+  DidsModule,
+  InitConfig,
+  V2CredentialProtocol,
+  MediationRecipientModule,
+  ConnectionsModule,
+  KeyDidResolver,
   AutoAcceptCredential,
+  ProofsModule,
   AutoAcceptProof,
-  ConnectionEventTypes,
-  ConnectionRecord,
-  ConnectionStateChangedEvent,
+  V2ProofProtocol,
+  Agent,
+  OutOfBandRecord,
+  LogLevel,
+  utils,
   ConsoleLogger,
+  HttpOutboundTransport,
+  WsOutboundTransport,
+  ConnectionStateChangedEvent,
+  ConnectionEventTypes,
+  DidExchangeState,
+  KeyType,
+  TypedArrayEncoder,
+  ConnectionRecord,
   CredentialEventTypes,
   CredentialState,
   CredentialStateChangedEvent,
-  DidExchangeState,
-  HttpOutboundTransport,
-  InitConfig,
-  LogLevel,
-  OutOfBandRecord,
+  ProofStateChangedEvent,
   ProofEventTypes,
   ProofState,
-  ProofStateChangedEvent,
-  V1CredentialPreview,
-  WsOutboundTransport,
-  utils,
+  V2CredentialPreview,
 } from '@aries-framework/core';
 
 import { HttpInboundTransport, agentDependencies } from '@aries-framework/node';
 
-import qrcode from 'qrcode-terminal';
+import {
+  AnonCredsCredentialFormatService,
+  AnonCredsModule,
+  AnonCredsProofFormatService,
+  LegacyIndyCredentialFormatService,
+  LegacyIndyProofFormatService,
+  V1CredentialPreview,
+  V1CredentialProtocol,
+  V1ProofProtocol,
+} from '@aries-framework/anoncreds';
+import { AskarModule } from '@aries-framework/askar';
+import {
+  IndyVdrAnonCredsRegistry,
+  IndyVdrIndyDidResolver,
+  IndyVdrModule,
+} from '@aries-framework/indy-vdr';
+import { AnonCredsRsModule } from '@aries-framework/anoncreds-rs';
+
+import { ariesAskar } from '@hyperledger/aries-askar-nodejs';
+import { anoncreds } from '@hyperledger/anoncreds-nodejs';
+import { indyVdr } from '@hyperledger/indy-vdr-nodejs';
 
 import { ledgers } from '../utils/ledgers';
 import { Aries } from '../errors';
 
 const publicDidSeed = <string>process.env.PUBLIC_DID_SEED;
+const issuerId = <string>process.env.ISSUER_DID;
 const schemaName = <string>process.env.SCHEMA_NAME;
 const mediatorInvitationUrl = <string>process.env.MEDIATOR_URL;
 const label = <string>process.env.LABEL;
@@ -47,26 +79,64 @@ let connectedConnectionRecord: ConnectionRecord;
 
 const agentConfig: InitConfig = {
   logger: new ConsoleLogger(env === 'dev' ? LogLevel.trace : LogLevel.info),
+  // logger: new ConsoleLogger(LogLevel.info),
   label: label + utils.uuid(),
-  autoAcceptConnections: true,
-  autoAcceptProofs: AutoAcceptProof.Always,
-  autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
-  mediatorConnectionsInvite: mediatorInvitationUrl,
-  indyLedgers: ledgers,
-  publicDidSeed,
-  // autoUpdateStorageOnStartup: true,
   walletConfig: {
     id: label,
-    key: 'key',
-    // storage: { type: 'sqlite' },
+    key: 'demoagentissuer00000000000000000',
   },
 };
 
 async function initializeAgent(agentConfig: InitConfig) {
   try {
+    const legacyIndyCredentialFormatService =
+      new LegacyIndyCredentialFormatService();
+    const legacyIndyProofFormatService = new LegacyIndyProofFormatService();
+
     const agent = new Agent({
       config: agentConfig,
       dependencies: agentDependencies,
+      modules: {
+        connections: new ConnectionsModule({
+          autoAcceptConnections: true,
+        }),
+        mediationRecipient: new MediationRecipientModule({
+          mediatorInvitationUrl,
+        }),
+        credentials: new CredentialsModule({
+          autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
+          credentialProtocols: [
+            new V2CredentialProtocol({
+              credentialFormats: [new AnonCredsCredentialFormatService()],
+            }),
+          ],
+        }),
+        proofs: new ProofsModule({
+          autoAcceptProofs: AutoAcceptProof.ContentApproved,
+          proofProtocols: [
+            new V2ProofProtocol({
+              proofFormats: [new AnonCredsProofFormatService()],
+            }),
+          ],
+        }),
+        anoncreds: new AnonCredsModule({
+          registries: [new IndyVdrAnonCredsRegistry()],
+        }),
+        anoncredsRs: new AnonCredsRsModule({
+          anoncreds,
+        }),
+        indyVdr: new IndyVdrModule({
+          indyVdr,
+          networks: [ledgers],
+        }),
+        dids: new DidsModule({
+          resolvers: [new IndyVdrIndyDidResolver(), new KeyDidResolver()],
+          registrars: [],
+        }),
+        askar: new AskarModule({
+          ariesAskar,
+        }),
+      },
     });
     // Registering the required in- and outbound transports
     agent.registerOutboundTransport(new HttpOutboundTransport());
@@ -105,6 +175,21 @@ const createOutOfBandRecord = async () => {
   return invitationUrl;
 };
 
+const importDID = async () => {
+  console.log('issuerId');
+  console.log(issuerId);
+  agent.dids.import({
+    did: issuerId,
+    overwrite: true,
+    privateKeys: [
+      {
+        keyType: KeyType.Ed25519,
+        privateKey: TypedArrayEncoder.fromString(publicDidSeed),
+      },
+    ],
+  });
+};
+
 const registerSchema = async (
   attributes: string[],
   name: string,
@@ -112,21 +197,38 @@ const registerSchema = async (
 ) => {
   console.log('registerSchema');
   try {
-    const schema = await agent.ledger.registerSchema({
-      attributes,
-      name,
-      version,
-    });
-    console.log('schema');
-    console.log(schema);
+    if (!issuerId) {
+      throw new Error('Missing anoncred issuerId');
+    }
 
-    // create a folder if doesn't exits to store data
+    const schemaTemplate = {
+      name: name + utils.uuid(),
+      version: version,
+      attrNames: attributes,
+      issuerId: issuerId,
+    };
+    const { schemaState } = await agent.modules.anoncreds.registerSchema({
+      schema: schemaTemplate,
+      options: {
+        endorserMode: 'internal',
+        endorserDid: issuerId,
+      },
+    });
+    console.log(schemaState);
+
+    if (schemaState.state !== 'finished') {
+      throw new Error(
+        `Error registering schema: ${
+          schemaState.state === 'failed' ? schemaState.reason : 'Not Finished'
+        }`
+      );
+    }
     const dir = './data';
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir);
     }
-    fs.writeFileSync('./data/schema.json', JSON.stringify(schema));
-    return schema;
+    fs.writeFileSync('./data/schema.json', JSON.stringify(schemaState));
+    return schemaState;
   } catch (error) {
     console.log(error);
   }
@@ -134,24 +236,37 @@ const registerSchema = async (
 
 const registerCredentialDefinition = async (schema: any) => {
   try {
-    const credentialDefinition =
-      await agent.ledger.registerCredentialDefinition({
-        schema,
-        supportRevocation: false,
-        tag: 'latest',
+    const { credentialDefinitionState } =
+      await agent.modules.anoncreds.registerCredentialDefinition({
+        credentialDefinition: {
+          schemaId: schema.schemaId,
+          issuerId: issuerId,
+          tag: 'latest',
+        },
+        options: {},
       });
+
+    if (credentialDefinitionState.state !== 'finished') {
+      throw new Error(
+        `Error registering credential definition: ${
+          credentialDefinitionState.state === 'failed'
+            ? credentialDefinitionState.reason
+            : 'Not Finished'
+        }}`
+      );
+    }
     fs.writeFileSync(
       './data/credentialDefinition.json',
-      JSON.stringify(credentialDefinition)
+      JSON.stringify(credentialDefinitionState)
     );
 
-    return credentialDefinition;
-  } catch (error) {}
+    return credentialDefinitionState;
+  } catch (error) {
+    console.log(error);
+  }
 };
 
 const registerInitialScehmaAndCredDef = async () => {
-  console.log('called registerInitialScehmaAndCredDef');
-
   const schema = await registerSchema(
     ['LandID', 'OwnerName', 'OwnerAadhar'],
     schemaName + utils.uuid(),
@@ -160,7 +275,6 @@ const registerInitialScehmaAndCredDef = async () => {
   console.log(schema);
   const credentialDefinition = await registerCredentialDefinition(schema);
 };
-
 // send basic message
 
 const sendMessage = async (connectionRecordId: string, message: string) => {
@@ -174,17 +288,18 @@ const issueCredentialV1 = async (
 ) => {
   let credentialPreview;
   try {
-    credentialPreview = await V1CredentialPreview.fromRecord(attributes);
+    credentialPreview = await V2CredentialPreview.fromRecord(attributes);
     console.log(credentialPreview);
+    console.log(attributes);
   } catch (error) {
     throw new Aries(`credentialPreview : ${error}`);
   }
   try {
     const offerCredential = await agent.credentials.offerCredential({
-      protocolVersion: 'v1',
       connectionId,
+      protocolVersion: <never>'v2',
       credentialFormats: {
-        indy: {
+        anoncreds: {
           credentialDefinitionId,
           attributes: credentialPreview.attributes,
         },
@@ -232,4 +347,5 @@ export {
   sendMessage,
   connectedConnectionRecord,
   issueCredentialV1,
+  importDID,
 };
