@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import {
   agent,
   connectedConnectionRecord,
-  issueCredentialV1,
+  issueCredentialV2,
 } from '../integration/integration';
 import { sendMessage } from '../integration/integration';
 import { Aries } from '../errors';
@@ -22,14 +22,13 @@ const send = async (req: express.Request, res: express.Response) => {
     );
     const initialCredDef = JSON.parse(initialCredDefBuffer);
     console.log(initialCredDef.credentialDefinitionId);
-    console.log(initialCredDef.credentialDefinition.credentialDefinitionId);
     credentialDefinitionId = initialCredDef.credentialDefinitionId;
   }
   console.log(
     `sending credential offer for connection id ${connectionId} using cred def ${credentialDefinitionId}`
   );
   try {
-    const credentialOffer = await issueCredentialV1(
+    const credentialOffer = await issueCredentialV2(
       credentialDefinitionId,
       connectionId,
       attributes

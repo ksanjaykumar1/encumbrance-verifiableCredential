@@ -10,7 +10,7 @@ const getCredDefById = async (req: express.Request, res: express.Response) => {
   const initialCredDefBuffer = fs.readFileSync(`./data/credentialDefinition.json`, 'utf8');
   const initialCredDef = JSON.parse(initialCredDefBuffer);
 
-  const credDefId = credDef_id || initialCredDef.id;
+  const credDefId = credDef_id || initialCredDef.credentialDefinitionId;
   try {
     const credDef = await agent.modules.anoncreds.getCredentialDefinition(credDefId);
     res.status(200).json({ credDef });

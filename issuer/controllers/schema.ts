@@ -10,7 +10,7 @@ const getSchemaById = async (req: express.Request, res: express.Response) => {
   const initialSchemaBuffer = fs.readFileSync(`./data/schema.json`, 'utf8');
   const initialSchema = JSON.parse(initialSchemaBuffer);
 
-  const schemaId = schema_id || initialSchema.id;
+  const schemaId = schema_id || initialSchema.schemaId;
   try {
     const schema = await agent.modules.anoncreds.getSchema(schemaId);
 
