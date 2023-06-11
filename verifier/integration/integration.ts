@@ -88,6 +88,8 @@ const agentConfig: InitConfig = {
 
 async function initializeAgent(agentConfig: InitConfig) {
   try {
+    const legacyIndyProofFormatService = new LegacyIndyProofFormatService();
+
     const agent = new Agent({
       config: agentConfig,
       dependencies: agentDependencies,
@@ -110,7 +112,10 @@ async function initializeAgent(agentConfig: InitConfig) {
           autoAcceptProofs: AutoAcceptProof.ContentApproved,
           proofProtocols: [
             new V2ProofProtocol({
-              proofFormats: [new AnonCredsProofFormatService()],
+              proofFormats: [
+                new AnonCredsProofFormatService(),
+                legacyIndyProofFormatService,
+              ],
             }),
           ],
         }),

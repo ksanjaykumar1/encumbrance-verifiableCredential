@@ -105,7 +105,7 @@ async function initializeAgent(agentConfig: InitConfig) {
           autoAcceptCredentials: AutoAcceptCredential.Always,
           credentialProtocols: [
             new V2CredentialProtocol({
-              credentialFormats: [new AnonCredsCredentialFormatService()],
+              credentialFormats: [new AnonCredsCredentialFormatService(), legacyIndyCredentialFormatService,],
             }),
           ],
         }),

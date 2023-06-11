@@ -48,10 +48,13 @@ import {
   V1CredentialPreview,
   V1CredentialProtocol,
   V1ProofProtocol,
+  getUnqualifiedCredentialDefinitionId,
+  parseIndyCredentialDefinitionId,
 } from '@aries-framework/anoncreds';
 import { AskarModule } from '@aries-framework/askar';
 import {
   IndyVdrAnonCredsRegistry,
+  IndyVdrIndyDidRegistrar,
   IndyVdrIndyDidResolver,
   IndyVdrModule,
 } from '@aries-framework/indy-vdr';
@@ -107,7 +110,10 @@ async function initializeAgent(agentConfig: InitConfig) {
           autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
           credentialProtocols: [
             new V2CredentialProtocol({
-              credentialFormats: [new AnonCredsCredentialFormatService()],
+              credentialFormats: [
+                new AnonCredsCredentialFormatService(),
+                legacyIndyCredentialFormatService,
+              ],
             }),
           ],
         }),
@@ -131,7 +137,7 @@ async function initializeAgent(agentConfig: InitConfig) {
         }),
         dids: new DidsModule({
           resolvers: [new IndyVdrIndyDidResolver(), new KeyDidResolver()],
-          registrars: [],
+          registrars: [new IndyVdrIndyDidRegistrar()],
         }),
         askar: new AskarModule({
           ariesAskar,
@@ -178,7 +184,7 @@ const createOutOfBandRecord = async () => {
 const importDID = async () => {
   console.log('issuerId');
   console.log(issuerId);
-  agent.dids.import({
+  await agent.dids.import({
     did: issuerId,
     overwrite: true,
     privateKeys: [
@@ -188,6 +194,16 @@ const importDID = async () => {
       },
     ],
   });
+  console.log(
+    'before creating and publishing did ........................................................'
+  );
+  await agent.dids.create({
+    method: 'indy',
+    did: issuerId,
+  });
+  console.log(
+    'after creating and publishing did ........................................................'
+  );
 };
 
 const registerSchema = async (
@@ -281,26 +297,41 @@ const sendMessage = async (connectionRecordId: string, message: string) => {
   await agent.basicMessages.sendMessage(connectionRecordId, message);
 };
 
-const issueCredentialV1 = async (
+const issueCredentialV2 = async (
   credentialDefinitionId: string,
   connectionId: string,
   attributes: any
 ) => {
-  let credentialPreview;
   try {
-    credentialPreview = await V2CredentialPreview.fromRecord(attributes);
-    console.log(credentialPreview);
-    console.log(attributes);
-  } catch (error) {
-    throw new Aries(`credentialPreview : ${error}`);
-  }
-  try {
+    const credentialPreview = await V2CredentialPreview.fromRecord(attributes);
+    const parsedCredentialDefinition = parseIndyCredentialDefinitionId(
+      credentialDefinitionId
+    );
+    console.log(
+      `parsedCredentialDefinition is ${JSON.stringify(
+        parsedCredentialDefinition
+      )}`
+    );
+    const unqualifiedCredentialDefinitionId =
+      getUnqualifiedCredentialDefinitionId(
+        parsedCredentialDefinition.namespaceIdentifier,
+        parsedCredentialDefinition.schemaSeqNo,
+        parsedCredentialDefinition.tag
+      );
+    console.log(
+      `unqualified identifer is ${unqualifiedCredentialDefinitionId}`
+    );
+
     const offerCredential = await agent.credentials.offerCredential({
       connectionId,
       protocolVersion: <never>'v2',
       credentialFormats: {
-        anoncreds: {
-          credentialDefinitionId,
+        // anoncreds: {
+        //   credentialDefinitionId,
+        //   attributes: credentialPreview.attributes,
+        // },
+        indy: {
+          credentialDefinitionId: unqualifiedCredentialDefinitionId,
           attributes: credentialPreview.attributes,
         },
       },
@@ -346,6 +377,6 @@ export {
   connectionListner,
   sendMessage,
   connectedConnectionRecord,
-  issueCredentialV1,
+  issueCredentialV2,
   importDID,
 };
